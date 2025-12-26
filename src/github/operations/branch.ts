@@ -142,7 +142,8 @@ export async function setupBranch(
       // Handle open PR: Checkout the PR branch
       console.log("This is an open PR, checking out PR branch...");
 
-      const branchName = prData.headRefName;
+      // Use pull/{number}/head as branch name to avoid conflicts and match the ref structure
+      const branchName = `pull/${entityNumber}/head`;
 
       // Determine optimal fetch depth based on PR commit count, with a minimum of 20
       const commitCount = prData.commits.totalCount;
@@ -168,7 +169,7 @@ export async function setupBranch(
         `refs/pull/${entityNumber}/head`,
       ]);
 
-      // Checkout the fetched PR and create a local branch with the original name
+      // Checkout the fetched PR with the pull/{number}/head branch name
       execGit(["checkout", "-b", branchName, "FETCH_HEAD"]);
 
       console.log(`Successfully checked out PR branch for PR #${entityNumber}`);
