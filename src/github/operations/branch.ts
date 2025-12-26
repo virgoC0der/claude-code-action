@@ -155,10 +155,21 @@ export async function setupBranch(
       // Validate branch names before use to prevent command injection
       validateBranchName(branchName);
 
-      // Execute git commands to checkout PR branch (dynamic depth based on PR size)
-      // Using execFileSync instead of shell template literals for security
-      execGit(["fetch", "origin", `--depth=${fetchDepth}`, branchName]);
-      execGit(["checkout", branchName, "--"]);
+      // For forked PRs, use GitHub's PR refs instead of fetching from the fork repository
+      // This avoids permission issues when the PR comes from a forked repository
+      // GitHub creates refs/pull/{number}/head for every PR in the main repository
+      console.log(
+        `Fetching PR using GitHub PR refs to handle forked repositories...`,
+      );
+      execGit([
+        "fetch",
+        "origin",
+        `--depth=${fetchDepth}`,
+        `refs/pull/${entityNumber}/head`,
+      ]);
+
+      // Checkout the fetched PR and create a local branch with the original name
+      execGit(["checkout", "-b", branchName, "FETCH_HEAD"]);
 
       console.log(`Successfully checked out PR branch for PR #${entityNumber}`);
 
