@@ -168,8 +168,9 @@ export async function setupBranch(
         `refs/pull/${entityNumber}/head`,
       ]);
 
-      // Checkout the fetched PR and create a local branch with the original name
-      execGit(["checkout", "-b", branchName, "FETCH_HEAD"]);
+      // Checkout the fetched PR and create/reset a local branch with the original name
+      // Use -B instead of -b to force create/reset if branch already exists
+      execGit(["checkout", "-B", branchName, "FETCH_HEAD"]);
 
       console.log(`Successfully checked out PR branch for PR #${entityNumber}`);
 
