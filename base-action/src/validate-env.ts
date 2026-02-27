@@ -1,8 +1,47 @@
 /**
+ * Resolves the effective authentication token for direct Anthropic API usage.
+ *
+ * Priority order:
+ * 1. ANTHROPIC_AUTH_TOKEN + ANTHROPIC_BASE_URL (highest priority — overrides OAuth token)
+ * 2. ANTHROPIC_API_KEY (standard API key)
+ * 3. CLAUDE_CODE_OAUTH_TOKEN (used only when neither ANTHROPIC_AUTH_TOKEN nor ANTHROPIC_API_KEY is set)
+ *
+ * When ANTHROPIC_AUTH_TOKEN is provided it is exported as ANTHROPIC_API_KEY so
+ * Claude Code can consume it via the standard env-var name.
+ */
+export function resolveAuthToken(): void {
+  const anthropicAuthToken = process.env.ANTHROPIC_AUTH_TOKEN;
+  const anthropicApiKey = process.env.ANTHROPIC_API_KEY;
+  const claudeCodeOAuthToken = process.env.CLAUDE_CODE_OAUTH_TOKEN;
+
+  // ANTHROPIC_AUTH_TOKEN (with ANTHROPIC_BASE_URL) takes highest priority.
+  // Override CLAUDE_CODE_OAUTH_TOKEN when ANTHROPIC_AUTH_TOKEN is present.
+  if (anthropicAuthToken) {
+    process.env.ANTHROPIC_API_KEY = anthropicAuthToken;
+    // Ensure CLAUDE_CODE_OAUTH_TOKEN does not interfere.
+    delete process.env.CLAUDE_CODE_OAUTH_TOKEN;
+    return;
+  }
+
+  // ANTHROPIC_API_KEY is already set — nothing to do.
+  if (anthropicApiKey) {
+    return;
+  }
+
+  // Fall back to CLAUDE_CODE_OAUTH_TOKEN if provided.
+  if (claudeCodeOAuthToken) {
+    return;
+  }
+}
+
+/**
  * Validates the environment variables required for running Claude Code
  * based on the selected provider (Anthropic API, AWS Bedrock, Google Vertex AI, or Microsoft Foundry)
  */
 export function validateEnvironmentVariables() {
+  // Resolve auth tokens before validation so the correct vars are in place.
+  resolveAuthToken();
+
   const useBedrock = process.env.CLAUDE_CODE_USE_BEDROCK === "1";
   const useVertex = process.env.CLAUDE_CODE_USE_VERTEX === "1";
   const useFoundry = process.env.CLAUDE_CODE_USE_FOUNDRY === "1";
@@ -22,7 +61,7 @@ export function validateEnvironmentVariables() {
   if (!useBedrock && !useVertex && !useFoundry) {
     if (!anthropicApiKey && !claudeCodeOAuthToken) {
       errors.push(
-        "Either ANTHROPIC_API_KEY or CLAUDE_CODE_OAUTH_TOKEN is required when using direct Anthropic API.",
+        "Either ANTHROPIC_API_KEY, ANTHROPIC_AUTH_TOKEN, or CLAUDE_CODE_OAUTH_TOKEN is required when using direct Anthropic API.",
       );
     }
   } else if (useBedrock) {
