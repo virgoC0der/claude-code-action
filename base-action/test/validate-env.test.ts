@@ -1,7 +1,7 @@
 #!/usr/bin/env bun
 
 import { describe, test, expect, beforeEach, afterEach } from "bun:test";
-import { validateEnvironmentVariables } from "../src/validate-env";
+import { validateEnvironmentVariables, resolveAuthToken } from "../src/validate-env";
 
 describe("validateEnvironmentVariables", () => {
   let originalEnv: NodeJS.ProcessEnv;
@@ -11,6 +11,9 @@ describe("validateEnvironmentVariables", () => {
     originalEnv = { ...process.env };
     // Clear relevant environment variables
     delete process.env.ANTHROPIC_API_KEY;
+    delete process.env.ANTHROPIC_AUTH_TOKEN;
+    delete process.env.ANTHROPIC_BASE_URL;
+    delete process.env.CLAUDE_CODE_OAUTH_TOKEN;
     delete process.env.CLAUDE_CODE_USE_BEDROCK;
     delete process.env.CLAUDE_CODE_USE_VERTEX;
     delete process.env.CLAUDE_CODE_USE_FOUNDRY;
@@ -33,6 +36,46 @@ describe("validateEnvironmentVariables", () => {
     process.env = originalEnv;
   });
 
+  describe("resolveAuthToken", () => {
+    test("ANTHROPIC_AUTH_TOKEN sets ANTHROPIC_API_KEY and clears CLAUDE_CODE_OAUTH_TOKEN", () => {
+      process.env.ANTHROPIC_AUTH_TOKEN = "auth-token-value";
+      process.env.ANTHROPIC_BASE_URL = "https://custom.api.example.com";
+      process.env.CLAUDE_CODE_OAUTH_TOKEN = "oauth-token-value";
+
+      resolveAuthToken();
+
+      expect(process.env.ANTHROPIC_API_KEY).toBe("auth-token-value");
+      expect(process.env.CLAUDE_CODE_OAUTH_TOKEN).toBeUndefined();
+    });
+
+    test("ANTHROPIC_AUTH_TOKEN takes priority over ANTHROPIC_API_KEY", () => {
+      process.env.ANTHROPIC_AUTH_TOKEN = "auth-token-value";
+      process.env.ANTHROPIC_API_KEY = "existing-api-key";
+
+      resolveAuthToken();
+
+      expect(process.env.ANTHROPIC_API_KEY).toBe("auth-token-value");
+    });
+
+    test("ANTHROPIC_API_KEY is preserved when ANTHROPIC_AUTH_TOKEN is absent", () => {
+      process.env.ANTHROPIC_API_KEY = "existing-api-key";
+
+      resolveAuthToken();
+
+      expect(process.env.ANTHROPIC_API_KEY).toBe("existing-api-key");
+      expect(process.env.CLAUDE_CODE_OAUTH_TOKEN).toBeUndefined();
+    });
+
+    test("CLAUDE_CODE_OAUTH_TOKEN is preserved when neither ANTHROPIC_AUTH_TOKEN nor ANTHROPIC_API_KEY is set", () => {
+      process.env.CLAUDE_CODE_OAUTH_TOKEN = "oauth-token-value";
+
+      resolveAuthToken();
+
+      expect(process.env.CLAUDE_CODE_OAUTH_TOKEN).toBe("oauth-token-value");
+      expect(process.env.ANTHROPIC_API_KEY).toBeUndefined();
+    });
+  });
+
   describe("Direct Anthropic API", () => {
     test("should pass when ANTHROPIC_API_KEY is provided", () => {
       process.env.ANTHROPIC_API_KEY = "test-api-key";
@@ -40,9 +83,35 @@ describe("validateEnvironmentVariables", () => {
       expect(() => validateEnvironmentVariables()).not.toThrow();
     });
 
-    test("should fail when ANTHROPIC_API_KEY is missing", () => {
+    test("should pass when ANTHROPIC_AUTH_TOKEN is provided (mapped to ANTHROPIC_API_KEY)", () => {
+      process.env.ANTHROPIC_AUTH_TOKEN = "test-auth-token";
+      process.env.ANTHROPIC_BASE_URL = "https://custom.api.example.com";
+
+      expect(() => validateEnvironmentVariables()).not.toThrow();
+      // ANTHROPIC_AUTH_TOKEN should have been promoted to ANTHROPIC_API_KEY
+      expect(process.env.ANTHROPIC_API_KEY).toBe("test-auth-token");
+    });
+
+    test("should pass when CLAUDE_CODE_OAUTH_TOKEN is provided", () => {
+      process.env.CLAUDE_CODE_OAUTH_TOKEN = "test-oauth-token";
+
+      expect(() => validateEnvironmentVariables()).not.toThrow();
+    });
+
+    test("ANTHROPIC_AUTH_TOKEN + ANTHROPIC_BASE_URL takes priority over CLAUDE_CODE_OAUTH_TOKEN", () => {
+      process.env.ANTHROPIC_AUTH_TOKEN = "auth-token-value";
+      process.env.ANTHROPIC_BASE_URL = "https://custom.api.example.com";
+      process.env.CLAUDE_CODE_OAUTH_TOKEN = "oauth-token-value";
+
+      expect(() => validateEnvironmentVariables()).not.toThrow();
+      // Should have used ANTHROPIC_AUTH_TOKEN and cleared CLAUDE_CODE_OAUTH_TOKEN
+      expect(process.env.ANTHROPIC_API_KEY).toBe("auth-token-value");
+      expect(process.env.CLAUDE_CODE_OAUTH_TOKEN).toBeUndefined();
+    });
+
+    test("should fail when no auth credentials are provided", () => {
       expect(() => validateEnvironmentVariables()).toThrow(
-        "Either ANTHROPIC_API_KEY or CLAUDE_CODE_OAUTH_TOKEN is required when using direct Anthropic API.",
+        "Either ANTHROPIC_API_KEY, ANTHROPIC_AUTH_TOKEN, or CLAUDE_CODE_OAUTH_TOKEN is required when using direct Anthropic API.",
       );
     });
   });
